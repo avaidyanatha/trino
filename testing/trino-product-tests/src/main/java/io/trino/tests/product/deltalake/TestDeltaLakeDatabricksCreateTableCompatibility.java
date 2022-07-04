@@ -14,6 +14,7 @@
 package io.trino.tests.product.deltalake;
 
 import com.google.common.collect.ImmutableList;
+import io.trino.tempto.BeforeTestWithContext;
 import io.trino.tempto.assertions.QueryAssert;
 import org.testng.annotations.Test;
 
@@ -23,8 +24,10 @@ import static io.trino.tempto.assertions.QueryAssert.Row.row;
 import static io.trino.tempto.assertions.QueryAssert.assertThat;
 import static io.trino.tests.product.TestGroups.DELTA_LAKE_DATABRICKS;
 import static io.trino.tests.product.TestGroups.PROFILE_SPECIFIC_TESTS;
+import static io.trino.tests.product.deltalake.util.DeltaLakeTestUtils.DATABRICKS_104_RUNTIME_VERSION;
 import static io.trino.tests.product.deltalake.util.DeltaLakeTestUtils.getColumnCommentOnDelta;
 import static io.trino.tests.product.deltalake.util.DeltaLakeTestUtils.getColumnCommentOnTrino;
+import static io.trino.tests.product.deltalake.util.DeltaLakeTestUtils.getDatabricksRuntimeVersion;
 import static io.trino.tests.product.deltalake.util.DeltaLakeTestUtils.getTableCommentOnDelta;
 import static io.trino.tests.product.hive.util.TemporaryHiveTable.randomTableSuffix;
 import static io.trino.tests.product.utils.QueryExecutors.onDelta;
@@ -35,6 +38,15 @@ import static org.testng.Assert.assertEquals;
 public class TestDeltaLakeDatabricksCreateTableCompatibility
         extends BaseTestDeltaLakeS3Storage
 {
+    private String databricksRuntimeVersion;
+
+    @BeforeTestWithContext
+    public void setup()
+    {
+        super.setUp();
+        databricksRuntimeVersion = getDatabricksRuntimeVersion();
+    }
+
     @Test(groups = {DELTA_LAKE_DATABRICKS, PROFILE_SPECIFIC_TESTS})
     public void testDatabricksCanReadInitialCreateTable()
     {
@@ -49,11 +61,19 @@ public class TestDeltaLakeDatabricksCreateTableCompatibility
         try {
             assertThat(onDelta().executeQuery("SHOW TABLES FROM default LIKE '" + tableName + "'")).contains(row("default", tableName, false));
             assertThat(onDelta().executeQuery("SELECT count(*) FROM default." + tableName)).contains(row(0));
+            String showCreateTableTemplate;
+            if (databricksRuntimeVersion.equals(DATABRICKS_104_RUNTIME_VERSION)) {
+                showCreateTableTemplate = "CREATE TABLE spark_catalog.default.%s (\n  integer INT,\n  string STRING,\n  timetz TIMESTAMP)\nUSING delta\nLOCATION 's3://%s/%s'\n%s";
+            }
+            else {
+                showCreateTableTemplate = "CREATE TABLE `default`.`%s` (\n  `integer` INT,\n  `string` STRING,\n  `timetz` TIMESTAMP)\nUSING DELTA\nLOCATION 's3://%s/%s'\n%s";
+            }
             String showCreateTable = format(
-                    "CREATE TABLE `default`.`%s` (\n  `integer` INT,\n  `string` STRING,\n  `timetz` TIMESTAMP)\nUSING DELTA\nLOCATION 's3://%s/%s'\n",
+                    showCreateTableTemplate,
                     tableName,
                     bucketName,
-                    tableDirectory);
+                    tableDirectory,
+                    getDatabricksDefaultTableProperties());
             assertThat(onDelta().executeQuery("SHOW CREATE TABLE default." + tableName))
                     .containsExactlyInOrder(row(showCreateTable));
             testInsert(tableName, ImmutableList.of());
@@ -108,11 +128,19 @@ public class TestDeltaLakeDatabricksCreateTableCompatibility
         try {
             assertThat(onDelta().executeQuery("SHOW TABLES FROM default LIKE '" + tableName + "'")).contains(row("default", tableName, false));
             assertThat(onDelta().executeQuery("SELECT count(*) FROM default." + tableName)).contains(row(3));
+            String showCreateTableTemplate;
+            if (databricksRuntimeVersion.equals(DATABRICKS_104_RUNTIME_VERSION)) {
+                showCreateTableTemplate = "CREATE TABLE spark_catalog.default.%s (\n  integer INT,\n  string STRING,\n  timetz TIMESTAMP)\nUSING delta\nLOCATION 's3://%s/%s'\n%s";
+            }
+            else {
+                showCreateTableTemplate = "CREATE TABLE `default`.`%s` (\n  `integer` INT,\n  `string` STRING,\n  `timetz` TIMESTAMP)\nUSING DELTA\nLOCATION 's3://%s/%s'\n%s";
+            }
             String showCreateTable = format(
-                    "CREATE TABLE `default`.`%s` (\n  `integer` INT,\n  `string` STRING,\n  `timetz` TIMESTAMP)\nUSING DELTA\nLOCATION 's3://%s/%s'\n",
+                    showCreateTableTemplate,
                     tableName,
                     bucketName,
-                    tableDirectory);
+                    tableDirectory,
+                    getDatabricksDefaultTableProperties());
             assertThat(onDelta().executeQuery("SHOW CREATE TABLE default." + tableName)).containsExactlyInOrder(row(showCreateTable));
             testInsert(
                     tableName,
@@ -141,12 +169,21 @@ public class TestDeltaLakeDatabricksCreateTableCompatibility
         try {
             assertThat(onDelta().executeQuery("SHOW TABLES LIKE '" + tableName + "'")).contains(row("default", tableName, false));
             assertThat(onDelta().executeQuery("SELECT count(*) FROM " + tableName)).contains(row(3));
+            String showCreateTableTemplate;
+            if (databricksRuntimeVersion.equals(DATABRICKS_104_RUNTIME_VERSION)) {
+                showCreateTableTemplate = "CREATE TABLE spark_catalog.default.%s (\n  integer INT,\n  string STRING,\n  timetz TIMESTAMP)\nUSING delta\n" +
+                        "PARTITIONED BY (string)\nLOCATION 's3://%s/%s'\n%s";
+            }
+            else {
+                showCreateTableTemplate = "CREATE TABLE `default`.`%s` (\n  `integer` INT,\n  `string` STRING,\n  `timetz` TIMESTAMP)\nUSING DELTA\n" +
+                        "PARTITIONED BY (string)\nLOCATION 's3://%s/%s'\n%s";
+            }
             String showCreateTable = format(
-                    "CREATE TABLE `default`.`%s` (\n  `integer` INT,\n  `string` STRING,\n  `timetz` TIMESTAMP)\nUSING DELTA\n" +
-                            "PARTITIONED BY (string)\nLOCATION 's3://%s/%s'\n",
+                    showCreateTableTemplate,
                     tableName,
                     bucketName,
-                    tableDirectory);
+                    tableDirectory,
+                    getDatabricksDefaultTableProperties());
             assertThat(onDelta().executeQuery("SHOW CREATE TABLE " + tableName)).containsExactlyInOrder(row(showCreateTable));
             testInsert(
                     tableName,
@@ -240,5 +277,16 @@ public class TestDeltaLakeDatabricksCreateTableCompatibility
         finally {
             onDelta().executeQuery("DROP TABLE default." + tableName);
         }
+    }
+
+    private String getDatabricksDefaultTableProperties()
+    {
+        if (databricksRuntimeVersion.equals(DATABRICKS_104_RUNTIME_VERSION)) {
+            return "TBLPROPERTIES (\n" +
+                    "  'Type' = 'EXTERNAL',\n" +
+                    "  'delta.minReaderVersion' = '1',\n" +
+                    "  'delta.minWriterVersion' = '2')\n";
+        }
+        return "";
     }
 }
